@@ -87,6 +87,10 @@ function layout() {
       <div class="menu-wrap"><button class="btn ghost" id="btn-chaos" title="Inject failures">💥<span class="lbl"> Chaos</span></button><div class="menu" id="chaos-menu"></div></div>
       <button class="icon-btn" id="btn-undo" title="Undo (Ctrl+Z)">↶</button>
       <button class="icon-btn" id="btn-redo" title="Redo (Ctrl+Y)">↷</button>
+      <button class="icon-btn theme-btn" id="btn-theme" title="Switch light/dark theme" aria-label="Switch light/dark theme">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>
+      </button>
       <div class="menu-wrap"><button class="icon-btn" id="btn-more" title="More">⋯</button><div class="menu" id="more-menu">
         <button data-act="share">🔗 Copy share link</button>
         <button data-act="export">⬇ Export design (JSON)</button>
@@ -470,6 +474,18 @@ function bindChrome() {
   $('#speed').onchange = e => { app.speed = +e.target.value; };
   $('#btn-undo').onclick = undo;
   $('#btn-redo').onclick = redo;
+  // Light/dark: an explicit choice is stored under the shared "theme" key; otherwise follow the OS.
+  const darkNow = () => (document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+  const syncThemeBtn = () => { $('#btn-theme').title = darkNow() ? 'Switch to light theme' : 'Switch to dark theme'; };
+  $('#btn-theme').onclick = () => {
+    const next = darkNow() ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    syncThemeBtn();
+  };
+  addEventListener('storage', e => { if (e.key === 'theme' && (e.newValue === 'light' || e.newValue === 'dark')) { document.documentElement.dataset.theme = e.newValue; syncThemeBtn(); } });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeBtn);
+  syncThemeBtn();
   $('#btn-menu').onclick = () => {
     if (innerWidth <= 980) document.body.classList.toggle('show-sidebar');
     else { document.body.classList.toggle('hide-sidebar'); store.set('hideSidebar', document.body.classList.contains('hide-sidebar')); setTimeout(() => app.editor.fit(), 50); }

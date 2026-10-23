@@ -78,6 +78,12 @@ input, select { font: inherit; color: var(--text); }
 .icon-btn { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line2); background: var(--card); display: grid; place-items: center; font-size: 15px; }
 .icon-btn:hover { background: var(--card2); }
 .only-mobile { display: none; }
+/* theme toggle: show the moon in light mode, the sun in dark mode */
+.theme-btn svg { width: 17px; height: 17px; }
+.theme-btn .sun { display: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .theme-btn .sun { display: block; } :root:not([data-theme="light"]) .theme-btn .moon { display: none; } }
+:root[data-theme="dark"] .theme-btn .sun { display: block; }
+:root[data-theme="dark"] .theme-btn .moon { display: none; }
 .menu-wrap { position: relative; }
 .menu { position: absolute; right: 0; top: calc(100% + 6px); background: var(--card); border: 1px solid var(--line2); border-radius: 12px; padding: 6px; min-width: 250px; display: none; box-shadow: 0 16px 40px -12px var(--shadow-strong); z-index: 50; }
 .menu.open { display: block; }
