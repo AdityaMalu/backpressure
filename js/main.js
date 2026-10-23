@@ -9,6 +9,7 @@ import { COURSE, LESSONS, findLesson, TEMPLATES } from './curriculum/index.js';
 import { renderCalculator } from './calculator.js';
 import { runLab } from './selftest.js';
 import { IV_IDS, ROUND_SEC, newAttempt, startingGraph, gradeReqs, gradeEstimates, parseCount, overallScore, remainingSec, clockText, clockLabel, pickerHTML, stepHTML } from './interview.js';
+import { initTips } from './tips.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const pct = x => (x == null || !isFinite(x) ? '–' : (x * 100 >= 10 || x === 0 ? Math.round(x * 100) : (x * 100).toFixed(x * 100 >= 1 ? 1 : 2)) + '%');
@@ -68,6 +69,7 @@ function boot() {
   document.body.innerHTML = layout();
   app.editor = new Editor($('#canvas'), app);
   bindChrome();
+  initTips();
   renderPalette();
   route();
   window.addEventListener('hashchange', route);
@@ -726,7 +728,7 @@ function renderPalette() {
     h += `<div class="pal-cat">${cat}</div>`;
     for (const [type, def] of Object.entries(CATALOG)) {
       if (def.category !== cat) continue;
-      h += `<div class="pal-item" data-type="${type}" title="${esc(def.desc)}" style="--accent:${def.color}"><span class="ico">${def.icon}</span><span>${esc(def.label)}</span></div>`;
+      h += `<div class="pal-item" data-type="${type}" data-tip="c:${type}" style="--accent:${def.color}"><span class="ico">${def.icon}</span><span>${esc(def.label)}</span></div>`;
     }
   }
   h += '</div>';
@@ -912,7 +914,7 @@ function inspectHTML() {
     else if (p.kind === 'select') input = `<select data-k="${p.key}">${p.options.map(o => `<option value="${o}" ${String(o) === String(v) ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
     else if (p.kind === 'range') input = `<div class="range"><input type="range" data-k="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}"><output>${fmtParam(p, v)}</output></div>`;
     else input = `<input type="number" data-k="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}">`;
-    form += `<div class="field ${p.kind}"><label>${esc(p.label)}${p.help ? `<i class="help" title="${esc(p.help)}">?</i>` : ''}</label>${input}</div>`;
+    form += `<div class="field ${p.kind}"><label>${esc(p.label)}${p.help ? `<i class="help" tabindex="0" data-tip-title="${esc(p.label)}" data-tip-text="${esc(p.help)}">?</i>` : ''}</label>${input}</div>`;
   }
   const st = app.sim.ns.get(n.id);
   return `<div class="inspect">
@@ -950,10 +952,10 @@ function edgeExplain(a, b) {
 function metricsHTML() {
   return `<div class="metrics">
     <div class="tiles" id="tiles"></div>
-    <h3>Throughput <small><i class="sw" style="background:var(--dim)"></i>offered <i class="sw" style="background:var(--green)"></i>successful</small></h3><div class="chart-box" id="ch-thr"></div>
-    <h3>Latency <small><i class="sw" style="background:var(--blue)"></i>p50 <i class="sw" style="background:var(--pink)"></i>p99</small></h3><div class="chart-box" id="ch-lat"></div>
-    <h3>Failures <small><i class="sw" style="background:var(--red)"></i>errors <i class="sw" style="background:var(--amber)"></i>429s <i class="sw" style="background:var(--violet)"></i>stale reads</small></h3><div class="chart-box" id="ch-err"></div>
-    <h3>Cost / month</h3><div class="chart-box" id="ch-cost"></div>
+    <h3 data-tip="m:goodput">Throughput <small><i class="sw" style="background:var(--dim)"></i>offered <i class="sw" style="background:var(--green)"></i>successful</small></h3><div class="chart-box" id="ch-thr"></div>
+    <h3 data-tip="m:p99">Latency <small><i class="sw" style="background:var(--blue)"></i>p50 <i class="sw" style="background:var(--pink)"></i>p99</small></h3><div class="chart-box" id="ch-lat"></div>
+    <h3 data-tip="m:errors">Failures <small><i class="sw" style="background:var(--red)"></i>errors <i class="sw" style="background:var(--amber)"></i>429s <i class="sw" style="background:var(--violet)"></i>stale reads</small></h3><div class="chart-box" id="ch-err"></div>
+    <h3 data-tip="m:cost">Cost / month</h3><div class="chart-box" id="ch-cost"></div>
     <h3>What's happening</h3><div id="insights"></div>
     <h3>Event log</h3><div class="log" id="log"></div>
   </div>`;
@@ -1086,20 +1088,20 @@ function renderLive(force) {
 function renderKpis() {
   const m = app.sim.metrics;
   const r = app.sim.history.length ? app.sim.rolling(2) : m;
-  const k = (label, val, cls = '') => `<div class="kpi ${cls}"><span>${label}</span><b>${val}</b></div>`;
+  const k = (label, val, cls = '', tip = '') => `<div class="kpi ${cls}" data-tip="${tip}"><span>${label}</span><b>${val}</b></div>`;
   const okCls = r.okRate >= 0.999 ? 'good' : r.okRate >= 0.99 ? 'warn' : 'bad';
   const p99Cls = r.p99 < 300 ? 'good' : r.p99 < 1000 ? 'warn' : 'bad';
   $('#kpis').innerHTML =
-    k('Traffic', fmtRps(r.offered) + ' rps') +
-    k('Success', pct(r.okRate), r.offered ? okCls : '') +
-    k('p50', fmtMs(r.p50)) +
-    k('p99', fmtMs(r.p99), r.offered ? p99Cls : '') +
-    (r.rejRate > 0.001 ? k('429s', pct(r.rejRate), 'warn') : '') +
-    (r.staleRate > 0.001 ? k('Stale', pct(r.staleRate), r.staleRate > 0.01 ? 'warn' : '') : '') +
-    (r.consumerLag > 0.5 ? k('Lag', secs(r.consumerLag), r.consumerLag > 10 ? 'bad' : 'warn') : '') +
-    (m.lostWrites > 0 ? k('Lost', Math.round(m.lostWrites).toLocaleString(), 'bad') : '') +
-    (m.duplicates > 0.5 ? k('Dupes', Math.round(m.duplicates).toLocaleString(), 'bad') : '') +
-    k('Cost', usd(r.cost) + '/mo');
+    k('Traffic', fmtRps(r.offered) + ' rps', '', 'm:traffic') +
+    k('Success', pct(r.okRate), r.offered ? okCls : '', 'm:success') +
+    k('p50', fmtMs(r.p50), '', 'm:p50') +
+    k('p99', fmtMs(r.p99), r.offered ? p99Cls : '', 'm:p99') +
+    (r.rejRate > 0.001 ? k('429s', pct(r.rejRate), 'warn', 'm:rej') : '') +
+    (r.staleRate > 0.001 ? k('Stale', pct(r.staleRate), r.staleRate > 0.01 ? 'warn' : '', 'm:stale') : '') +
+    (r.consumerLag > 0.5 ? k('Lag', secs(r.consumerLag), r.consumerLag > 10 ? 'bad' : 'warn', 'm:lag') : '') +
+    (m.lostWrites > 0 ? k('Lost', Math.round(m.lostWrites).toLocaleString(), 'bad', 'm:lost') : '') +
+    (m.duplicates > 0.5 ? k('Dupes', Math.round(m.duplicates).toLocaleString(), 'bad', 'm:dupes') : '') +
+    k('Cost', usd(r.cost) + '/mo', '', 'm:cost');
 }
 
 function liveInspect() {
@@ -1129,36 +1131,36 @@ function liveInspect() {
   if (!st) { el.innerHTML = '<p class="muted">Press ▶ Run to see live numbers.</p>'; return; }
   const rows = [];
   const tot = st.in.r + st.in.w + st.in.s;
-  rows.push(['Status', `<span class="st st-${st.status}">${(st.status || 'idle').toUpperCase()}</span>`]);
+  rows.push(['Status', `<span class="st st-${st.status}">${(st.status || 'idle').toUpperCase()}</span>`, 'i:status']);
   if (n.type === 'client') {
     const m = sim.metrics;
-    rows.push(['Sending', fmtRps(tot) + ' rps'], ['Success', pct(m.okRate)], ['Errors', pct(m.errRate)], ['p50 / p99', fmtMs(m.p50) + ' / ' + fmtMs(m.p99)]);
+    rows.push(['Sending', fmtRps(tot) + ' rps', 'i:sending'], ['Success', pct(m.okRate), 'm:success'], ['Errors', pct(m.errRate), 'm:errors'], ['p50 / p99', fmtMs(m.p50) + ' / ' + fmtMs(m.p99), 'm:p99']);
   } else {
-    rows.push(['Incoming', `${fmtRps(tot)} rps <small>(${fmtRps(st.in.r)} r · ${fmtRps(st.in.w)} w${st.in.s ? ' · ' + fmtRps(st.in.s) + ' s' : ''})</small>`]);
-    if (st.inRepl) rows.push(['Replication in', fmtRps(st.inRepl) + ' writes/s']);
+    rows.push(['Incoming', `${fmtRps(tot)} rps <small>(${fmtRps(st.in.r)} r · ${fmtRps(st.in.w)} w${st.in.s ? ' · ' + fmtRps(st.in.s) + ' s' : ''})</small>`, 'i:incoming']);
+    if (st.inRepl) rows.push(['Replication in', fmtRps(st.inRepl) + ' writes/s', 'i:replin']);
     if (n.type === 'app' || n.type === 'worker') {
-      rows.push(['Instances', `${st.instances}${st.pending.length ? ` (+${st.pending.length} booting)` : ''}`]);
-      rows.push(['CPU', pct(st.cpu)], ['Threads busy', pct(st.threadUtil)], ['Capacity now', fmtRps(st.effCap) + ' rps'], ['Time per request', fmtMs(st.holdMs)]);
-    } else if (!['cdn', 'dns', 'client'].includes(n.type)) rows.push(['Utilization', pct(st.util)]);
-    if (n.type === 'cache' || n.type === 'cdn') rows.push(['Hit ratio', pct(st.hit)]);
-    if (n.type === 'cache' && st.warmth < 1) rows.push(['Warmth', pct(st.warmth)]);
-    if (n.type === 'replica') rows.push(['Replication lag', secs(st.lag)]);
-    if (n.type === 'queue') rows.push(['Backlog', Math.round(st.qBacklog || 0).toLocaleString() + ' msgs'], ['Consumer lag', secs(st.qlag || 0)], ['Consuming', fmtRps(st.consumeRate || 0) + '/s']);
-    if (n.type === 'gateway') rows.push(['Rejected (429)', pct(st.rejFrac)]);
-    if (st.hotShare) rows.push(['Hottest partition share', pct(st.hotShare)]);
-    if (st.backlog > 0) rows.push(['Queued work', Math.round(st.backlog).toLocaleString()]);
-    rows.push(['Own latency p50/p99', fmtMs(Math.max(st.lat.r.p50, st.lat.w.p50, st.lat.s.p50)) + ' / ' + fmtMs(Math.max(st.lat.r.p99, st.lat.w.p99, st.lat.s.p99))]);
+      rows.push(['Instances', `${st.instances}${st.pending.length ? ` (+${st.pending.length} booting)` : ''}`, 'i:instances']);
+      rows.push(['CPU', pct(st.cpu), 'i:cpu'], ['Threads busy', pct(st.threadUtil), 'i:threads'], ['Capacity now', fmtRps(st.effCap) + ' rps', 'i:capacity'], ['Time per request', fmtMs(st.holdMs), 'i:hold']);
+    } else if (!['cdn', 'dns', 'client'].includes(n.type)) rows.push(['Utilization', pct(st.util), 'i:util']);
+    if (n.type === 'cache' || n.type === 'cdn') rows.push(['Hit ratio', pct(st.hit), 'i:hit']);
+    if (n.type === 'cache' && st.warmth < 1) rows.push(['Warmth', pct(st.warmth), 'i:warmth']);
+    if (n.type === 'replica') rows.push(['Replication lag', secs(st.lag), 'i:rlag']);
+    if (n.type === 'queue') rows.push(['Backlog', Math.round(st.qBacklog || 0).toLocaleString() + ' msgs', 'i:backlog'], ['Consumer lag', secs(st.qlag || 0), 'i:clag'], ['Consuming', fmtRps(st.consumeRate || 0) + '/s', 'i:consuming']);
+    if (n.type === 'gateway') rows.push(['Rejected (429)', pct(st.rejFrac), 'i:rejected']);
+    if (st.hotShare) rows.push(['Hottest partition share', pct(st.hotShare), 'i:hot']);
+    if (st.backlog > 0) rows.push(['Queued work', Math.round(st.backlog).toLocaleString(), 'i:queued']);
+    rows.push(['Own latency p50/p99', fmtMs(Math.max(st.lat.r.p50, st.lat.w.p50, st.lat.s.p50)) + ' / ' + fmtMs(Math.max(st.lat.r.p99, st.lat.w.p99, st.lat.s.p99)), 'i:ownlat']);
     const e = st.e2e;
     const domC = st.in.r >= st.in.w ? 'r' : 'w';
-    rows.push(['End-to-end p99 (from here)', fmtMs(e[domC].p99)]);
-    rows.push(['Dropped here', pct(st.dropFrac)]);
-    rows.push(['Failing (incl. downstream)', pct(e[domC].err)]);
+    rows.push(['End-to-end p99 (from here)', fmtMs(e[domC].p99), 'i:e2e']);
+    rows.push(['Dropped here', pct(st.dropFrac), 'i:dropped']);
+    rows.push(['Failing (incl. downstream)', pct(e[domC].err), 'i:failing']);
   }
   const ins = app.insights.filter(i => i.node === n.id);
   el.innerHTML = table(rows) + ins.map(i => insightHTML(i)).join('');
 }
 
-function table(rows) { return `<table class="kv">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`; }
+function table(rows) { return `<table class="kv">${rows.map(([k, v, tip]) => `<tr><td${tip ? ` data-tip="${tip}" class="has-tip"` : ''}>${k}</td><td>${v}</td></tr>`).join('')}</table>`; }
 
 function insightHTML(i) {
   return `<div class="insight sev-${i.sev}"><b>${esc(i.title)}</b><p>${esc(i.text)}</p>${i.fix ? `<p class="fix">→ ${esc(i.fix)}</p>` : ''}</div>`;
@@ -1170,8 +1172,8 @@ function liveMetrics() {
   const m = sim.history.length ? sim.rolling(2) : sim.metrics;
   const tiles = $('#tiles');
   if (!tiles) return;
-  const tl = (l, v) => `<div class="tile"><span>${l}</span><b>${v}</b></div>`;
-  tiles.innerHTML = tl('Offered', fmtRps(m.offered) + ' rps') + tl('Successful', fmtRps(m.goodput) + ' rps') + tl('p50', fmtMs(m.p50)) + tl('p99', fmtMs(m.p99)) + tl('Errors', pct(m.errRate)) + tl('Rejected', pct(m.rejRate)) + tl('Stale reads', pct(m.staleRate)) + tl('Cost', usd(m.cost) + '/mo') + (m.consumerLag > 0 ? tl('Consumer lag', secs(m.consumerLag)) : '') + (sim.metrics.lostWrites ? tl('Lost writes', Math.round(sim.metrics.lostWrites)) : '') + (sim.metrics.duplicates > 0.5 ? tl('Duplicates', Math.round(sim.metrics.duplicates)) : '');
+  const tl = (l, v, tip) => `<div class="tile" data-tip="${tip}"><span>${l}</span><b>${v}</b></div>`;
+  tiles.innerHTML = tl('Offered', fmtRps(m.offered) + ' rps', 'm:offered') + tl('Successful', fmtRps(m.goodput) + ' rps', 'm:goodput') + tl('p50', fmtMs(m.p50), 'm:p50') + tl('p99', fmtMs(m.p99), 'm:p99') + tl('Errors', pct(m.errRate), 'm:errors') + tl('Rejected', pct(m.rejRate), 'm:rej') + tl('Stale reads', pct(m.staleRate), 'm:stale') + tl('Cost', usd(m.cost) + '/mo', 'm:cost') + (m.consumerLag > 0 ? tl('Consumer lag', secs(m.consumerLag), 'm:lag') : '') + (sim.metrics.lostWrites ? tl('Lost writes', Math.round(sim.metrics.lostWrites), 'm:lost') : '') + (sim.metrics.duplicates > 0.5 ? tl('Duplicates', Math.round(sim.metrics.duplicates), 'm:dupes') : '');
   const pts = k => h.map(x => [x.t, x[k]]);
   const box = id => $(id);
   if (box('#ch-thr')) lineChart(box('#ch-thr'), [{ data: pts('offered'), color: 'var(--dim)', fill: true }, { data: pts('goodput'), color: 'var(--green)' }], { fmt: x => fmtRps(x) });
