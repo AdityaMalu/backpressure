@@ -56,6 +56,7 @@ const app = {
   snapshot: null,
 };
 window.__bp = app;
+app.lessons = LESSONS; // read by the /prep hub's data builder (quiz bank for its question of the day)
 app.toast = (...a) => toast(...a);
 
 // ---------------------------------------------------------------- boot
