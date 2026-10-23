@@ -26,8 +26,8 @@ export function lineChart(el, series, opts = {}) {
   for (const se of series) {
     if (!se.data.length) continue;
     const pts = se.data.map(d => `${sx(d[0]).toFixed(1)},${sy(d[1]).toFixed(1)}`).join(' ');
-    if (se.fill) s += `<polygon points="${sx(se.data[0][0])},${sy(0)} ${pts} ${sx(se.data[se.data.length - 1][0])},${sy(0)}" fill="${se.color}" opacity="0.12"/>`;
-    s += `<polyline points="${pts}" fill="none" stroke="${se.color}" stroke-width="1.8" stroke-linejoin="round"/>`;
+    if (se.fill) s += `<polygon points="${sx(se.data[0][0])},${sy(0)} ${pts} ${sx(se.data[se.data.length - 1][0])},${sy(0)}" style="fill:${se.color};opacity:.12"/>`;
+    s += `<polyline points="${pts}" style="fill:none;stroke:${se.color};stroke-width:1.8;stroke-linejoin:round"/>`;
   }
   s += `<text x="${pad.l}" y="${H - 3}" class="axis">${Math.round(x0)}s</text><text x="${W - pad.r}" y="${H - 3}" text-anchor="end" class="axis">${Math.round(x1)}s</text>`;
   s += '</svg>';

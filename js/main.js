@@ -809,9 +809,9 @@ function edgeExplain(a, b) {
 function metricsHTML() {
   return `<div class="metrics">
     <div class="tiles" id="tiles"></div>
-    <h3>Throughput <small><i class="sw" style="background:#64748b"></i>offered <i class="sw" style="background:#34d399"></i>successful</small></h3><div class="chart-box" id="ch-thr"></div>
-    <h3>Latency <small><i class="sw" style="background:#38bdf8"></i>p50 <i class="sw" style="background:#f472b6"></i>p99</small></h3><div class="chart-box" id="ch-lat"></div>
-    <h3>Failures <small><i class="sw" style="background:#ef4444"></i>errors <i class="sw" style="background:#fbbf24"></i>429s <i class="sw" style="background:#a78bfa"></i>stale reads</small></h3><div class="chart-box" id="ch-err"></div>
+    <h3>Throughput <small><i class="sw" style="background:var(--dim)"></i>offered <i class="sw" style="background:var(--green)"></i>successful</small></h3><div class="chart-box" id="ch-thr"></div>
+    <h3>Latency <small><i class="sw" style="background:var(--blue)"></i>p50 <i class="sw" style="background:var(--pink)"></i>p99</small></h3><div class="chart-box" id="ch-lat"></div>
+    <h3>Failures <small><i class="sw" style="background:var(--red)"></i>errors <i class="sw" style="background:var(--amber)"></i>429s <i class="sw" style="background:var(--violet)"></i>stale reads</small></h3><div class="chart-box" id="ch-err"></div>
     <h3>Cost / month</h3><div class="chart-box" id="ch-cost"></div>
     <h3>What's happening</h3><div id="insights"></div>
     <h3>Event log</h3><div class="log" id="log"></div>
@@ -991,11 +991,11 @@ function liveMetrics() {
   tiles.innerHTML = tl('Offered', fmtRps(m.offered) + ' rps') + tl('Successful', fmtRps(m.goodput) + ' rps') + tl('p50', fmtMs(m.p50)) + tl('p99', fmtMs(m.p99)) + tl('Errors', pct(m.errRate)) + tl('Rejected', pct(m.rejRate)) + tl('Stale reads', pct(m.staleRate)) + tl('Cost', usd(m.cost) + '/mo') + (m.consumerLag > 0 ? tl('Consumer lag', secs(m.consumerLag)) : '') + (sim.metrics.lostWrites ? tl('Lost writes', Math.round(sim.metrics.lostWrites)) : '') + (sim.metrics.duplicates > 0.5 ? tl('Duplicates', Math.round(sim.metrics.duplicates)) : '');
   const pts = k => h.map(x => [x.t, x[k]]);
   const box = id => $(id);
-  if (box('#ch-thr')) lineChart(box('#ch-thr'), [{ data: pts('offered'), color: '#64748b', fill: true }, { data: pts('goodput'), color: '#34d399' }], { fmt: x => fmtRps(x) });
+  if (box('#ch-thr')) lineChart(box('#ch-thr'), [{ data: pts('offered'), color: 'var(--dim)', fill: true }, { data: pts('goodput'), color: 'var(--green)' }], { fmt: x => fmtRps(x) });
   const p99goal = app.goals.find(g => g.metric === 'p99');
-  if (box('#ch-lat')) lineChart(box('#ch-lat'), [{ data: pts('p50'), color: '#38bdf8' }, { data: pts('p99'), color: '#f472b6' }], { fmt: x => fmtMs(x), threshold: p99goal?.value });
-  if (box('#ch-err')) lineChart(box('#ch-err'), [{ data: pts('errRate'), color: '#ef4444', fill: true }, { data: pts('rejRate'), color: '#fbbf24' }, { data: pts('staleRate'), color: '#a78bfa' }], { fmt: x => pct(x), min: 0.01 });
-  if (box('#ch-cost')) lineChart(box('#ch-cost'), [{ data: pts('cost'), color: '#e2e8f0' }], { fmt: x => usd(x), height: 64 });
+  if (box('#ch-lat')) lineChart(box('#ch-lat'), [{ data: pts('p50'), color: 'var(--blue)' }, { data: pts('p99'), color: 'var(--pink)' }], { fmt: x => fmtMs(x), threshold: p99goal?.value });
+  if (box('#ch-err')) lineChart(box('#ch-err'), [{ data: pts('errRate'), color: 'var(--red)', fill: true }, { data: pts('rejRate'), color: 'var(--amber)' }, { data: pts('staleRate'), color: 'var(--violet)' }], { fmt: x => pct(x), min: 0.01 });
+  if (box('#ch-cost')) lineChart(box('#ch-cost'), [{ data: pts('cost'), color: 'var(--text)' }], { fmt: x => usd(x), height: 64 });
   const ins = $('#insights');
   if (ins) ins.innerHTML = app.insights.length ? app.insights.slice(0, 8).map(i => insightHTML({ ...i, title: (i.node ? nm(app.graph.nodes.find(n => n.id === i.node)) + ': ' : '') + i.title })).join('') : `<p class="muted">${sim.t > 0 ? 'All quiet. Nothing is struggling.' : 'Run the simulation to see diagnostics.'}</p>`;
   const log = $('#log');

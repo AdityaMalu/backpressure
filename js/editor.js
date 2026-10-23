@@ -10,7 +10,18 @@ const OFF = 5000; // svg offset so edges can live at negative coordinates
 export const fmtRps = x => (x >= 1e6 ? (x / 1e6).toFixed(1) + 'M' : x >= 1e4 ? Math.round(x / 1e3) + 'k' : x >= 1e3 ? (x / 1e3).toFixed(1) + 'k' : x >= 10 ? Math.round(x) + '' : x > 0 ? x.toFixed(1) : '0');
 export const fmtMs = x => (x >= 10000 ? (x / 1000).toFixed(0) + 's' : x >= 1000 ? (x / 1000).toFixed(1) + 's' : Math.round(x) + 'ms');
 const STATUS_LABEL = { healthy: 'HEALTHY', stressed: 'STRESSED', saturated: 'SATURATED', down: 'DOWN', idle: 'IDLE' };
-const CLASS_COLOR = { r: '#38bdf8', w: '#fbbf24', s: '#a78bfa' };
+// Particle colors come from the theme tokens (reads / writes / static / failing),
+// re-read at most twice a second so a light/dark switch is picked up live.
+let themeCache = null, themeAt = 0;
+function themeColors() {
+  const now = performance.now();
+  if (themeCache && now - themeAt < 500) return themeCache;
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  themeCache = { r: v('--blue'), w: v('--amber'), s: v('--violet'), fail: v('--red'), glow: +v('--glow') || 0 };
+  themeAt = now;
+  return themeCache;
+}
 
 let uid = 0;
 export const newId = prefix => `${prefix}${Date.now().toString(36)}${(uid++).toString(36)}`;
@@ -36,7 +47,7 @@ export class Editor {
         <div class="world">
           <svg class="edges" width="${OFF * 2}" height="${OFF * 2}" style="left:${-OFF}px;top:${-OFF}px">
             <defs>
-              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,1 L9,5 L0,9 z" fill="#5b7bb0"/></marker>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,1 L9,5 L0,9 z" style="fill:var(--edge-live)"/></marker>
             </defs>
             <g class="edge-layer" transform="translate(${OFF},${OFF})"></g>
             <g class="temp-layer" transform="translate(${OFF},${OFF})"></g>
@@ -428,25 +439,34 @@ export class Editor {
       items.push(it);
       if (items.length >= 3) break;
     }
-    const { x: vx, y: vy, k } = this.view;
+    const { x: vx, k } = this.view;
     const W = this.vp.clientWidth;
-    const key = items.map(i => i.node + i.title + i.text).join('|') + `|${Math.round(vx)},${Math.round(vy)},${k.toFixed(2)},${W}`;
-    if (key === this._calloutKey) return;
-    this._calloutKey = key;
-    this.calloutLayer.innerHTML = '';
+    // Callouts are keyed by node + title and updated in place: their text has live
+    // numbers, and rebuilding them would restart the pop-in animation every frame.
+    this.calloutEls = this.calloutEls || new Map();
+    const keep = new Set();
     for (const it of items) {
       const n = this.graph.nodes.find(x => x.id === it.node);
       if (!n) continue;
-      const div = document.createElement('div');
-      div.className = 'callout sev-' + it.sev;
-      div.dataset.node = n.id;
+      const id = it.node + '|' + it.title;
+      keep.add(id);
+      let div = this.calloutEls.get(id);
+      if (!div) {
+        div = document.createElement('div');
+        div.className = 'callout sev-' + it.sev;
+        div.dataset.node = n.id;
+        div.innerHTML = `<b>${it.sev === 'bad' ? '⚠' : '✓'} ${esc(it.title)}</b><span></span>`;
+        this.calloutLayer.appendChild(div);
+        this.calloutEls.set(id, div);
+      }
+      const span = div.querySelector('span');
+      if (span.textContent !== it.text) span.textContent = it.text;
       // Prefer the top-right of the node; flip left if that would leave the screen.
       const rightEdge = (n.x + NODE_W - 20 + 240) * k + vx;
       div.style.left = (rightEdge > W - 8 ? n.x - 210 : n.x + NODE_W - 20) + 'px';
       div.style.top = (n.y - 64) + 'px';
-      div.innerHTML = `<b>${it.sev === 'bad' ? '⚠' : '✓'} ${esc(it.title)}</b><span>${esc(it.text)}</span>`;
-      this.calloutLayer.appendChild(div);
     }
+    for (const [id, div] of this.calloutEls) if (!keep.has(id)) { div.remove(); this.calloutEls.delete(id); }
   }
 
   drawParticles(sim, dtReal, running) {
@@ -454,6 +474,7 @@ export class Editor {
     const { x: vx, y: vy, k } = this.view;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const pal = themeColors();
     for (const e of this.graph.edges) {
       const grp = this.edgeEls.get(e.id);
       const E = sim.es.get(e.id);
@@ -482,11 +503,11 @@ export class Editor {
         if (p.fail && t > 0.75) continue; // failing requests die before arriving
         const pt = bezPoint(p1, p2, t);
         const sx = pt.x * k + vx, sy = (pt.y + p.jitter) * k + vy;
-        const col = p.fail ? '#ef4444' : CLASS_COLOR[p.cls];
+        const col = p.fail ? pal.fail : pal[p.cls];
         c.beginPath();
         c.fillStyle = col;
         c.shadowColor = col;
-        c.shadowBlur = 8;
+        c.shadowBlur = pal.glow;
         c.arc(sx, sy, Math.max(1.6, 2.6 * k), 0, Math.PI * 2);
         c.fill();
       }
