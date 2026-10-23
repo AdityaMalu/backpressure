@@ -22,7 +22,7 @@ export function runLab(lab, graph) {
   for (const g of goals) if (g.at === 'end') { g.v = m[g.metric]; g.failed = !cmp(g.v, g.op, g.value); }
   const worst = {};
   for (const h of sim.history) for (const k of ['p99', 'errRate', 'cost', 'staleRate', 'consumerLag']) worst[k] = Math.max(worst[k] || 0, h[k]);
-  return { pass: goals.every(g => !g.failed), failed: goals.filter(g => g.failed).map(g => `${g.metric} ${g.op} ${g.value} broke@${g.at_ ?? 'end'} v=${fmt(g.v)}`), worst: Object.fromEntries(Object.entries(worst).map(([k, v]) => [k, fmt(v)])), final: { p99: fmt(m.p99), err: fmt(m.errRate), cost: fmt(m.cost), avail: fmt(m.availability), avgCost: fmt(m.avgCost), stale: fmt(m.staleRate), lag: fmt(m.consumerLag) } };
+  return { pass: goals.every(g => !g.failed), goals, end: m, failed: goals.filter(g => g.failed).map(g => `${g.metric} ${g.op} ${g.value} broke@${g.at_ ?? 'end'} v=${fmt(g.v)}`), worst: Object.fromEntries(Object.entries(worst).map(([k, v]) => [k, fmt(v)])), final: { p99: fmt(m.p99), err: fmt(m.errRate), cost: fmt(m.cost), avail: fmt(m.availability), avgCost: fmt(m.avgCost), stale: fmt(m.staleRate), lag: fmt(m.consumerLag) } };
 }
 const fmt = v => (v == null ? v : Math.abs(v) < 1 ? +v.toFixed(4) : Math.round(v));
 

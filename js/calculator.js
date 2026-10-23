@@ -22,6 +22,25 @@ const FIELDS = [
 const fmtN = x => x >= 1e9 ? (x / 1e9).toFixed(1) + 'B' : x >= 1e6 ? (x / 1e6).toFixed(1) + 'M' : x >= 1e3 ? (x / 1e3).toFixed(1) + 'k' : x.toFixed(x < 10 ? 1 : 0);
 const fmtB = kb => { const b = kb * 1024; const u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']; let i = 0, v = b; while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; } return v.toFixed(v < 10 ? 1 : 0) + ' ' + u[i]; };
 
+// The numbers behind the calculator, also used to grade interview estimates.
+export function estimate(preset) {
+  const v = { ...DEFAULTS, ...preset };
+  const S = 86400;
+  const rAvg = (v.dau * v.readsPerUser) / S;
+  const wAvg = (v.dau * v.writesPerUser) / S;
+  const mAvg = (v.dau * v.mediaPerUser) / S;
+  const rPeak = rAvg * v.peak, wPeak = wAvg * v.peak;
+  const perDayKB = v.dau * (v.writesPerUser * v.recordKB + v.mediaPerUser * v.mediaKB);
+  const totalKB = perDayKB * 365 * v.years * v.replication;
+  const egressKBs = (rAvg * v.recordKB) + (mAvg * v.mediaKB * Math.max(1, v.readsPerUser / Math.max(1, v.writesPerUser)));
+  const ingressKBs = perDayKB / S;
+  const cacheKB = v.dau * v.readsPerUser * v.recordKB * 0.2;
+  const servers = Math.ceil((rPeak + wPeak) / v.serverRps);
+  return { v, rAvg, wAvg, rPeak, wPeak, peakQps: rPeak + wPeak, ratio: v.writesPerUser ? v.readsPerUser / v.writesPerUser : Infinity, perDayKB, yearKB: perDayKB * 365, totalKB, egressKBs, ingressKBs, cacheKB, servers };
+}
+
+export { fmtN, fmtB };
+
 export function renderCalculator(el, preset) {
   const v = { ...DEFAULTS, ...(typeof preset === 'object' ? preset : {}) };
   el.innerHTML = `<section class="calc"><h2>🧮 Back-of-the-envelope calculator</h2>
@@ -30,17 +49,7 @@ export function renderCalculator(el, preset) {
     <div class="calc-out"></div></section>`;
   const out = el.querySelector('.calc-out');
   const update = () => {
-    const S = 86400;
-    const rAvg = (v.dau * v.readsPerUser) / S;
-    const wAvg = (v.dau * v.writesPerUser) / S;
-    const mAvg = (v.dau * v.mediaPerUser) / S;
-    const rPeak = rAvg * v.peak, wPeak = wAvg * v.peak;
-    const perDayKB = v.dau * (v.writesPerUser * v.recordKB + v.mediaPerUser * v.mediaKB);
-    const totalKB = perDayKB * 365 * v.years * v.replication;
-    const egressKBs = (rAvg * v.recordKB) + (mAvg * v.mediaKB * Math.max(1, v.readsPerUser / Math.max(1, v.writesPerUser))) ;
-    const ingressKBs = perDayKB / S;
-    const cacheKB = v.dau * v.readsPerUser * v.recordKB * 0.2;
-    const servers = Math.ceil((rPeak + wPeak) / v.serverRps);
+    const { rAvg, wAvg, rPeak, wPeak, perDayKB, totalKB, egressKBs, ingressKBs, cacheKB, servers } = estimate(v);
     const rows = [
       ['Average reads', fmtN(rAvg) + ' /s'],
       ['Average writes', fmtN(wAvg) + ' /s'],

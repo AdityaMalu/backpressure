@@ -7,6 +7,8 @@ import { lineChart } from './charts.js';
 import { store, encodeDesign, decodeDesign } from './storage.js';
 import { COURSE, LESSONS, findLesson, TEMPLATES } from './curriculum/index.js';
 import { renderCalculator } from './calculator.js';
+import { runLab } from './selftest.js';
+import { IV_IDS, ROUND_SEC, newAttempt, startingGraph, gradeReqs, gradeEstimates, parseCount, overallScore, remainingSec, clockText, clockLabel, pickerHTML, stepHTML } from './interview.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const pct = x => (x == null || !isFinite(x) ? '–' : (x * 100 >= 10 || x === 0 ? Math.round(x * 100) : (x * 100).toFixed(x * 100 >= 1 ? 1 : 2)) + '%');
@@ -54,6 +56,8 @@ const app = {
   finished: false,
   hintsShown: 0,
   snapshot: null,
+  iv: null, // the interview attempt in progress (null outside interview mode)
+  ivPicker: false,
 };
 window.__bp = app;
 app.lessons = LESSONS; // read by the /prep hub's data builder (quiz bank for its question of the day)
@@ -112,6 +116,7 @@ function layout() {
     </section>
     <aside class="panel" id="panel">
       <nav class="tabs" id="tabs">
+        <button data-tab="interview">Interview</button>
         <button data-tab="learn">Learn</button>
         <button data-tab="lab">Lab</button>
         <button data-tab="inspect">Inspect</button>
@@ -142,6 +147,7 @@ function route() {
     if (!h && store.get('lastLesson')) return loadLesson(store.get('lastLesson'), true);
     return loadSandbox();
   }
+  if (h === 'interview' || h.startsWith('interview/')) return loadInterview(h.slice(10));
   const L = findLesson(h);
   if (L) loadLesson(L.id, true);
   else loadSandbox();
@@ -152,6 +158,7 @@ function loadLesson(id, fromRoute) {
   if (!L) return;
   stop();
   app.lesson = L;
+  app.iv = null; app.ivPicker = false;
   const saved = store.design(L.id);
   app.graph = clone(saved || L.lab?.graph || { nodes: [], edges: [] });
   app.undo = []; app.redo = []; app.selected = null; app.hintsShown = 0;
@@ -172,6 +179,7 @@ function loadLesson(id, fromRoute) {
 function loadSandbox(graph, title) {
   stop();
   app.lesson = null;
+  app.iv = null; app.ivPicker = false;
   app.graph = clone(graph || store.design('sandbox') || TEMPLATES[0].graph);
   app.undo = []; app.redo = []; app.selected = null;
   app.snapshot = JSON.stringify(app.graph);
@@ -186,17 +194,120 @@ function loadSandbox(graph, title) {
   document.body.classList.remove('show-sidebar');
 }
 
-function designKey() { return app.lesson ? app.lesson.id : 'sandbox'; }
+// Interview practice: #/interview lists the prompts, #/interview/<lessonId> runs
+// (or resumes) an attempt. Open attempts survive a reload.
+function loadInterview(id) {
+  const L = IV_IDS.includes(id) ? findLesson(id) : null;
+  stop();
+  app.lesson = null;
+  app.ivPicker = !L;
+  app.iv = null;
+  if (L) {
+    app.iv = store.get('interviewOpen', {})[id];
+    if (!app.iv) { app.iv = newAttempt(id); store.clearDesign('interview:' + id); }
+    app.iv.replay = false;
+    saveIv();
+  }
+  app.graph = clone((L && store.design('interview:' + id)) || (L ? startingGraph(L) : { nodes: [], edges: [] }));
+  app.undo = []; app.redo = []; app.selected = null;
+  app.snapshot = JSON.stringify(app.graph);
+  const want = '#/interview' + (L ? '/' + id : '');
+  if (location.hash !== want) history.replaceState(null, '', want);
+  resetSim();
+  app.editor.render();
+  requestAnimationFrame(() => app.editor.fit());
+  setTab('interview');
+  renderSidebar();
+  renderCrumb();
+  $('#panel-body').scrollTop = 0;
+  document.body.classList.remove('show-sidebar');
+}
+
+function saveIv() {
+  const open = store.get('interviewOpen', {});
+  if (app.iv) open[app.iv.id] = app.iv;
+  store.set('interviewOpen', open);
+}
+
+function restartInterview() {
+  const id = app.iv.id;
+  const open = store.get('interviewOpen', {});
+  delete open[id];
+  store.set('interviewOpen', open);
+  store.clearDesign('interview:' + id);
+  loadInterview(id);
+}
+
+// Counters that only grow: report their end-of-run total, not the value when the goal first broke.
+const CUMULATIVE = new Set(['duplicates', 'lostWrites']);
+
+function submitInterview() {
+  const iv = app.iv, L = findLesson(iv.id);
+  if (!app.graph.nodes.some(n => n.type !== 'client' && n.type !== 'external') && !confirm('Your canvas has no components yet. Submit anyway?')) return;
+  stop();
+  const mine = runLab(L.lab, app.graph), ref = runLab(L.lab, L.lab.solution);
+  iv.submittedAt = Date.now();
+  const goals = mine.goals.map(g => ({ metric: g.metric, op: g.op, value: g.value, label: g.label, at: g.at, failed: g.failed, at_: g.at_, v: (g.failed || g.at === 'end') && !CUMULATIVE.has(g.metric) ? g.v : mine.end[g.metric] }));
+  const goalsPassed = goals.filter(g => !g.failed).length;
+  iv.result = { pass: mine.pass, goals, goalsPassed, goalsTotal: goals.length, cost: mine.end.cost, refCost: ref.end.cost, timeUsed: (iv.submittedAt - iv.startedAt) / 1000 };
+  iv.step = 'report';
+  const overall = overallScore(iv);
+  const list = store.get('interviewAttempts', []);
+  list.push({ id: iv.id, at: iv.submittedAt, overall, req: iv.reqResult.score, est: iv.estResult.score, goalsPassed, goalsTotal: goals.length, pass: mine.pass, cost: Math.round(iv.result.cost), refCost: Math.round(iv.result.refCost), timeUsed: iv.result.timeUsed });
+  store.set('interviewAttempts', list.slice(-100));
+  saveIv();
+  setTab('interview');
+  $('#panel-body').scrollTop = 0;
+  toast(`Scored ${overall}/100. ${mine.pass ? 'Your design held every goal.' : 'Some goals broke: see the report.'}`, mine.pass ? 'info' : 'warn');
+}
+
+// Put the reference next to the candidate's design (below it, ids prefixed) or
+// replace the design with it. Both are ordinary commits, so undo reverts them.
+function showReference(mode) {
+  const s = clone(findLesson(app.iv.id).lab.solution);
+  if (mode === 'swap') { app.graph.nodes = s.nodes; app.graph.edges = s.edges; }
+  else {
+    app.graph.nodes = app.graph.nodes.filter(n => !n.id.startsWith('ref_'));
+    app.graph.edges = app.graph.edges.filter(e => !e.id.startsWith('ref_'));
+    const dy = Math.max(0, ...app.graph.nodes.map(n => n.y)) + 260 - Math.min(...s.nodes.map(n => n.y));
+    for (const n of s.nodes) { n.id = 'ref_' + n.id; n.y += dy; n.label = 'Ref · ' + (n.label || CATALOG[n.type].label); }
+    for (const e of s.edges) { e.id = 'ref_' + e.id; e.from = 'ref_' + e.from; e.to = 'ref_' + e.to; }
+    app.graph.nodes.push(...s.nodes); app.graph.edges.push(...s.edges);
+  }
+  app.selected = null;
+  app.commit('reference');
+  resetSim();
+  app.editor.fit();
+  toast(mode === 'swap' ? 'Reference solution swapped in. Undo (Ctrl+Z) brings your design back.' : 'Reference added below your design (nodes marked “Ref ·”). Undo (Ctrl+Z) removes it.');
+}
+
+function updateIvClock() {
+  const iv = app.iv;
+  if (!iv) return;
+  const rem = remainingSec(iv);
+  const text = iv.submittedAt ? clockText(ROUND_SEC - rem) : clockText(rem);
+  document.querySelectorAll('[data-iv-timer]').forEach(el => { if (el.textContent !== text) el.textContent = text; });
+  const label = clockLabel(iv, rem);
+  document.querySelectorAll('[data-iv-label]').forEach(el => { if (el.textContent !== label) el.textContent = label; });
+  document.querySelectorAll('[data-iv-clock]').forEach(el => { el.classList.toggle('low', !iv.submittedAt && rem >= 0 && rem < 300); el.classList.toggle('over', !iv.submittedAt && rem < 0); });
+  if (rem <= 0 && !iv.submittedAt && !iv.timeUp) { iv.timeUp = true; saveIv(); toast('Time’s up. Wrap up and submit when you can: overtime is recorded.', 'warn'); }
+}
+
+// The scenario in force: the lesson's lab, or the case study's lab while an
+// interview report replays it. Free runs in interview mode have no scenario.
+function activeLab() { return app.lesson?.lab || (app.iv?.replay ? findLesson(app.iv.id).lab : null); }
+
+function designKey() { return app.lesson ? app.lesson.id : app.iv ? 'interview:' + app.iv.id : 'sandbox'; }
 
 // ---------------------------------------------------------------- sim control
 function resetSim() {
-  app.sim = new Simulation(app.graph, app.lesson?.lab || {});
+  app.sim = new Simulation(app.graph, activeLab() || {});
   app.sim.index();
   app.running = false;
   app.finished = false;
   app.insights = [];
   app.seen = new Set();
-  app.goals = (app.lesson?.lab?.goals || []).map(g => ({ ...g, failed: false, cur: null }));
+  app.goals = (activeLab()?.goals || []).map(g => ({ ...g, failed: false, cur: null }));
   app.acc = 0;
   updateRunButton();
   renderPanel();
@@ -260,9 +371,9 @@ function cmp(v, op, t) {
 }
 
 function evalGoals() {
-  const L = app.lesson;
+  const lab = activeLab();
   const sim = app.sim;
-  if (!L?.lab) return;
+  if (!lab) return;
   const m = sim.rolling(3);
   for (const g of app.goals) {
     g.cur = m[g.metric];
@@ -270,7 +381,7 @@ function evalGoals() {
     if (sim.t < (g.after ?? 8)) continue;
     if (!g.failed && !cmp(g.cur, g.op, g.value)) { g.failed = true; g.failedAt = sim.t; g.failValue = g.cur; }
   }
-  if (sim.t >= (L.lab.duration || 60) - 1e-9) finishRun();
+  if (sim.t >= (lab.duration || 60) - 1e-9) finishRun();
 }
 
 function finishRun() {
@@ -281,6 +392,7 @@ function finishRun() {
   const passed = app.goals.length > 0 && app.goals.every(g => !g.failed);
   updateRunButton();
   renderPanel();
+  if (!app.lesson) return toast(passed ? 'Replay finished: every goal held.' : `Replay finished: ${app.goals.filter(g => g.failed).length} goal(s) broke. Check the Metrics tab.`, passed ? 'info' : 'warn');
   if (passed) {
     const usedSolution = app.solutionSnapshot && app.solutionSnapshot === fingerprint(app.graph);
     const first = !store.completed()[app.lesson.id];
@@ -570,6 +682,12 @@ function toggleMenu(m) {
 
 function renderCrumb() {
   const L = app.lesson;
+  if (app.iv || app.ivPicker) {
+    const title = app.iv ? findLesson(app.iv.id).title : 'Pick a prompt';
+    $('#crumb').innerHTML = `<span class="muted">Interview practice${app.iv ? ` · <span data-iv-timer>${clockText(remainingSec(app.iv))}</span>` : ''}</span><b>${esc(title)}</b>`;
+    document.title = 'Interview: ' + title + ' · Backpressure';
+    return;
+  }
   $('#crumb').innerHTML = L
     ? `<span class="muted">Weeks ${esc(L.week)} · ${esc(L.module)}</span><b>${esc(L.title)}</b>`
     : `<span class="muted">Free build</span><b>${esc(app.sandboxTitle || 'Sandbox')}</b>`;
@@ -584,7 +702,8 @@ function renderSidebar() {
   let h = `<div class="side-head">
     <div class="progress-label"><span>Your progress</span><b>${count}/${LESSONS.length} labs</b></div>
     <div class="progress"><i style="width:${(count / LESSONS.length) * 100}%"></i></div>
-    <a class="side-item sandbox ${!app.lesson ? 'active' : ''}" href="#/sandbox"><span class="dot">🧪</span><span>Sandbox: free build</span></a>
+    <a class="side-item sandbox ${!app.lesson && !app.iv && !app.ivPicker ? 'active' : ''}" href="#/sandbox"><span class="dot">🧪</span><span>Sandbox: free build</span></a>
+    <a class="side-item sandbox ${app.iv || app.ivPicker ? 'active' : ''}" href="#/interview"><span class="dot">🎤</span><span>Interview practice: 45-min mock</span></a>
   </div>`;
   for (const mod of COURSE) {
     const md = mod.lessons.filter(l => done[l.id]).length;
@@ -651,7 +770,12 @@ function renderPalette() {
 
 // ---------------------------------------------------------------- right panel
 function setTab(t) {
+  const iv = app.iv || app.ivPicker;
+  if (iv && t === 'learn') t = 'interview';
+  if (!iv && t === 'interview') t = 'learn';
   app.tab = t;
+  $('#tabs [data-tab="interview"]').style.display = iv ? '' : 'none';
+  $('#tabs [data-tab="learn"]').style.display = iv ? 'none' : '';
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
   $('#tabs [data-tab="lab"]').style.display = app.lesson?.lab ? '' : 'none';
   renderPanel();
@@ -662,6 +786,7 @@ function renderPanel() {
   if (!body) return;
   const t = app.tab;
   if (t === 'learn') body.innerHTML = app.lesson ? learnHTML() : sandboxHTML();
+  if (t === 'interview') body.innerHTML = app.iv ? stepHTML(app.iv, { describeEvent, METRICS, usd }) : pickerHTML(store.get('interviewAttempts', []));
   if (t === 'lab') body.innerHTML = labHTML();
   if (t === 'inspect') body.innerHTML = inspectHTML();
   if (t === 'metrics') body.innerHTML = metricsHTML();
@@ -851,6 +976,7 @@ function bindPanel(body) {
     if (a === 'del') deleteSel();
     if (a === 'dup') duplicateSel();
   }));
+  bindInterview(body);
   body.querySelectorAll('[data-chaos]').forEach(b => b.addEventListener('click', () => chaosAction(b.dataset.chaos, app.selected?.id)));
   body.querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => {
     const q = app.lesson.quiz[+b.dataset.q];
@@ -860,7 +986,7 @@ function bindPanel(body) {
     why.hidden = false;
     why.innerHTML = (+b.dataset.o === q.answer ? '<b>Correct.</b> ' : '<b>Not quite.</b> ') + md(q.why).replace(/^<p>|<\/p>$/g, '');
   }));
-  body.querySelectorAll('.tpl').forEach(b => b.addEventListener('click', () => {
+  body.querySelectorAll('.tpl[data-tpl]').forEach(b => b.addEventListener('click', () => {
     const t = TEMPLATES[+b.dataset.tpl];
     if (app.graph.nodes.length && !confirm('Replace the current sandbox design?')) return;
     const g = clone(t.graph);
@@ -899,13 +1025,54 @@ function bindPanel(body) {
   }
 }
 
+function bindInterview(body) {
+  const iv = app.iv;
+  if (!iv) return;
+  body.querySelectorAll('[data-req]').forEach(b => b.addEventListener('change', () => {
+    const i = +b.dataset.req;
+    iv.picks = b.checked ? [...new Set([...iv.picks, i])] : iv.picks.filter(x => x !== i);
+    saveIv();
+  }));
+  body.querySelectorAll('[data-est]').forEach(inp => inp.addEventListener('input', () => { iv.est[inp.dataset.est] = inp.value; saveIv(); }));
+  const go = step => { iv.step = step; saveIv(); renderPanel(); $('#panel-body').scrollTop = 0; };
+  body.querySelectorAll('[data-iv]').forEach(b => b.addEventListener('click', () => {
+    const a = b.dataset.iv;
+    if (a === 'lock-req') {
+      if (!iv.picks.length) return toast('Tick at least one requirement first.', 'warn');
+      iv.reqResult = gradeReqs(iv.id, iv.picks); saveIv(); renderPanel();
+    }
+    if (a === 'to-est') go('est');
+    if (a === 'check-est') {
+      const e = iv.est;
+      if (isNaN(parseCount(e.qps)) || !(+e.r > 0) || !(+e.w > 0) || !(+e.storage > 0)) return toast('Fill in all three estimates (QPS like “35k”, both sides of the ratio, and storage).', 'warn');
+      e.unit = e.unit || 'TB';
+      iv.estResult = gradeEstimates(findLesson(iv.id), e); saveIv(); renderPanel();
+    }
+    if (a === 'to-design') { go('design'); $('#palette').classList.remove('collapsed'); app.editor.fit(); }
+    if (a === 'back-est') go('est');
+    if (a === 'submit') submitInterview();
+    if (a === 'replay') {
+      iv.replay = true;
+      resetSim();
+      if (app.speed < 5) { app.speed = 5; $('#speed').value = '5'; }
+      start();
+      toast('Replaying the scenario at 5× on the canvas. Goals are scored live in the Metrics tab.');
+    }
+    if (a === 'side' || a === 'swap') showReference(a);
+    if (a === 'restart' && confirm('Discard this attempt and start the prompt over?')) restartInterview();
+    if (a === 'again') restartInterview();
+  }));
+}
+
 // Live-updating parts of the panel (called ~4×/s).
 function renderLive(force) {
   const sim = app.sim;
   if (!sim) return;
-  $('#clock').textContent = sim.t.toFixed(1) + 's' + (app.lesson?.lab ? ` / ${app.lesson.lab.duration || 60}s` : '');
+  const lab = activeLab();
+  $('#clock').textContent = sim.t.toFixed(1) + 's' + (lab ? ` / ${lab.duration || 60}s` : '');
   const bar = $('#runbar i');
-  if (bar) bar.style.width = app.lesson?.lab ? Math.min(100, (sim.t / (app.lesson.lab.duration || 60)) * 100) + '%' : '0%';
+  if (bar) bar.style.width = lab ? Math.min(100, (sim.t / (lab.duration || 60)) * 100) + '%' : '0%';
+  updateIvClock();
   renderKpis();
   if (!force && !app.running && sim.t > 0 && app._lastLiveT === sim.t) return;
   app._lastLiveT = sim.t;

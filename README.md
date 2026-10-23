@@ -6,6 +6,7 @@
 - Free-form canvas: 15 component types (load balancers, gateways, app servers, workers, Redis, SQL primaries and replicas, Cassandra, sharded SQL, Kafka, CDN, DNS, object storage, third-party APIs).
 - A queueing-based simulator that models utilization knees, thread-pool exhaustion (Little's law), retry storms, timeouts, circuit breakers, cache stampedes, replication lag, failover and data loss, hot partitions, resharding, consumer lag, CAP behaviour during partitions, autoscaling lag, CDN egress cost and more.
 - Diagnostics that explain what's breaking and why, plus metrics charts, an event log and a request-trace waterfall.
+- Interview practice (`#/interview`): a timed 45-minute mock round on any of the 7 real-world designs. Pick the requirements you'd clarify (with traps), estimate peak QPS, read:write ratio and storage (graded within an order of magnitude), build on a blank canvas, then submit to face the case study's scenario. The report scores each step, compares cost with the reference and can show the reference side by side.
 - Sandbox mode with templates, undo/redo, JSON import/export and share links (the design is compressed into the URL).
 
 No build step and no dependencies: plain ES modules, HTML and CSS.
@@ -33,6 +34,7 @@ js/catalog.js         component types, parameters, capacities and prices
 js/editor.js          drag-and-drop canvas, wiring, traffic particles, callouts
 js/insights.js        turns simulator state into explanations and fixes
 js/curriculum/*.js    lessons: markdown body, quiz, lab (graph, events, goals, hints, solution)
+js/interview.js       interview practice: requirement checklists, estimate grading, step views
 js/selftest.js        lab calibration checks
 ```
 
