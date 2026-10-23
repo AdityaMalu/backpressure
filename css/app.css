@@ -421,3 +421,18 @@ table.kv small { color: var(--dim); }
   .how { grid-template-columns: 1fr; }
   .field { grid-template-columns: 1fr 120px; }
 }
+
+/* ---------- explain-on-hover ---------- */
+.tip {
+  position: fixed; z-index: 120; max-width: 300px; padding: 9px 11px; border-radius: 10px;
+  background: var(--panel); color: var(--body-ink); border: 1px solid var(--line2);
+  box-shadow: 0 12px 30px -10px var(--shadow-strong); font: 12.5px/1.45 var(--sans);
+  pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity .12s, transform .12s;
+}
+.tip.show { opacity: 1; transform: none; }
+.tip b { display: block; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.tip span b { display: inline; font-size: inherit; margin: 0; }
+[data-tip]:not(.node-head):not(.edge-hit):not(.pal-item):not(.kpi):not(.tile):not(h3) { cursor: help; }
+.kpi[data-tip], .tile[data-tip], .metrics h3[data-tip] { cursor: help; }
+td.has-tip { text-decoration: underline dotted var(--dim); text-underline-offset: 3px; cursor: help; }
+.help:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }

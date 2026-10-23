@@ -326,12 +326,12 @@ export class Editor {
         el.dataset.id = n.id;
         el.innerHTML = `
           <div class="node-head"><span class="ico"></span><span class="name"></span></div>
-          <div class="node-sub"></div>
+          <div class="node-sub" data-tip="p:config"></div>
           <div class="node-status"><span class="badge">IDLE</span><span class="metric-a"></span></div>
-          <div class="node-bar"><i></i></div>
+          <div class="node-bar" data-tip="p:bar"><i></i></div>
           <div class="node-stats"><span class="s1"></span><span class="s2"></span></div>
-          <div class="port in" title="Input"></div>
-          <div class="port out" title="Drag to connect"></div>`;
+          <div class="port in" data-tip="p:in"></div>
+          <div class="port out" data-tip="p:out"></div>`;
         this.nodeLayer.appendChild(el);
         this.nodeEls.set(n.id, el);
       }
@@ -341,6 +341,7 @@ export class Editor {
       el.style.top = n.y + 'px';
       el.style.setProperty('--accent', def.color);
       el.querySelector('.ico').textContent = def.icon;
+      el.querySelector('.node-head').dataset.tip = 'c:' + n.type;
       el.querySelector('.name').textContent = n.label || def.label;
       el.querySelector('.node-sub').textContent = subtitle(n);
       el.classList.toggle('selected', this.app.selected?.kind === 'node' && this.app.selected.id === n.id);
@@ -367,6 +368,7 @@ export class Editor {
         const hit = document.createElementNS(SVGNS, 'path');
         hit.setAttribute('class', 'edge-hit');
         hit.dataset.id = e.id;
+        hit.dataset.tip = 'p:edge';
         const line = document.createElementNS(SVGNS, 'path');
         line.setAttribute('class', 'edge-line');
         line.setAttribute('marker-end', 'url(#arrow)');
@@ -400,13 +402,14 @@ export class Editor {
       if (el.dataset.status !== status) {
         el.dataset.status = status;
         el.querySelector('.badge').textContent = n.type === 'client' ? 'TRAFFIC' : (STATUS_LABEL[status] || 'IDLE');
+        el.querySelector('.badge').dataset.tip = 's:' + (status === 'client' ? 'client' : STATUS_LABEL[status] ? status : 'idle');
       }
       if (!st) continue;
       const tot = st.in.r + st.in.w + st.in.s + (st.inRepl || 0);
-      const [a, s1, s2, bar] = nodeReadout(n, st, sim);
-      el.querySelector('.metric-a').textContent = a;
-      el.querySelector('.s1').textContent = s1;
-      el.querySelector('.s2').textContent = s2;
+      const [a, s1, s2, bar, keys] = nodeReadout(n, st, sim);
+      const ea = el.querySelector('.metric-a'), e1 = el.querySelector('.s1'), e2 = el.querySelector('.s2');
+      ea.textContent = a; e1.textContent = s1; e2.textContent = s2;
+      if (ea.dataset.tip !== keys[0]) { ea.dataset.tip = keys[0]; e1.dataset.tip = keys[1]; e2.dataset.tip = keys[2]; }
       const b = el.querySelector('.node-bar i');
       b.style.width = Math.min(100, bar * 100) + '%';
       b.dataset.level = bar >= 0.95 ? 'hi' : bar >= 0.7 ? 'mid' : 'lo';
@@ -553,26 +556,26 @@ function nodeReadout(n, st, sim) {
   switch (n.type) {
     case 'client': {
       const m = sim.metrics;
-      return [`${fmtRps(m.offered)} rps`, `ok ${(m.okRate * 100).toFixed(1)}%`, `p99 ${fmtMs(m.p99)}`, 0];
+      return [`${fmtRps(m.offered)} rps`, `ok ${(m.okRate * 100).toFixed(1)}%`, `p99 ${fmtMs(m.p99)}`, 0, ['n:traffic', 'n:ok', 'n:p99client']];
     }
     case 'app': case 'worker':
-      return [`CPU ${Math.round(st.cpu * 100)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util];
+      return [`CPU ${Math.round(st.cpu * 100)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util, ['n:cpu', 'n:rps', 'n:p99']];
     case 'cache':
-      return [`hit ${Math.round(st.hit * 100)}%`, `${fmtRps(tot)} ops`, `p99 ${fmtMs(p99)}`, util];
+      return [`hit ${Math.round(st.hit * 100)}%`, `${fmtRps(tot)} ops`, `p99 ${fmtMs(p99)}`, util, ['n:hit', 'n:ops', 'n:p99']];
     case 'cdn':
-      return [`hit ${Math.round((st.hit || 0) * 100)}%`, `${fmtRps(tot)} rps`, `edge ${fmtMs(5)}`, 0];
+      return [`hit ${Math.round((st.hit || 0) * 100)}%`, `${fmtRps(tot)} rps`, `edge ${fmtMs(5)}`, 0, ['n:cdnhit', 'n:rps', 'n:edge']];
     case 'queue':
-      return [`lag ${fmtMs((st.qlag || 0) * 1000)}`, `${fmtRps(tot)} in`, `${fmtRps(st.consumeRate || 0)} out`, Math.min(1, (st.qlag || 0) / 30)];
+      return [`lag ${fmtMs((st.qlag || 0) * 1000)}`, `${fmtRps(tot)} in`, `${fmtRps(st.consumeRate || 0)} out`, Math.min(1, (st.qlag || 0) / 30), ['n:qlag', 'n:qin', 'n:qout']];
     case 'replica':
-      return [`lag ${fmtMs((st.lag || 0) * 1000)}`, `${fmtRps(tot)} reads`, `p99 ${fmtMs(p99)}`, util];
+      return [`lag ${fmtMs((st.lag || 0) * 1000)}`, `${fmtRps(tot)} reads`, `p99 ${fmtMs(p99)}`, util, ['n:rlag', 'n:reads', 'n:p99']];
     case 'gateway':
-      return [`429 ${Math.round((st.rejFrac || 0) * 100)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util];
+      return [`429 ${Math.round((st.rejFrac || 0) * 100)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util, ['n:r429', 'n:rps', 'n:p99']];
     case 'external':
-      return [`err ${((e2e.w.err || e2e.r.err || 0) * 100).toFixed(1)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util];
+      return [`err ${((e2e.w.err || e2e.r.err || 0) * 100).toFixed(1)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util, ['n:exterr', 'n:rps', 'n:p99']];
     case 'shard': case 'nosql':
-      return [`load ${Math.round(util * 100)}%`, `${fmtRps(tot)} ops`, `p99 ${fmtMs(p99)}`, util];
+      return [`load ${Math.round(util * 100)}%`, `${fmtRps(tot)} ops`, `p99 ${fmtMs(p99)}`, util, ['n:load', 'n:ops', 'n:p99']];
     default:
-      return [`load ${Math.round(util * 100)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util];
+      return [`load ${Math.round(util * 100)}%`, `${fmtRps(tot)} rps`, `p99 ${fmtMs(p99)}`, util, ['n:load', 'n:rps', 'n:p99']];
   }
 }
 
