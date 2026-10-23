@@ -56,6 +56,7 @@ const app = {
   snapshot: null,
 };
 window.__bp = app;
+app.toast = (...a) => toast(...a);
 
 // ---------------------------------------------------------------- boot
 function boot() {
@@ -540,7 +541,7 @@ function bindChrome() {
     if (e.key === 'Delete' || e.key === 'Backspace') { if (app.selected) { e.preventDefault(); deleteSel(); } }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSel(); }
     if (e.key === ' ') { e.preventDefault(); app.running ? stop() : start(); }
-    if (e.key === 'Escape') { app.select(null); closeModal(); }
+    if (e.key === 'Escape') { app.editor.cancelPending(); app.select(null); closeModal(); }
   });
 }
 

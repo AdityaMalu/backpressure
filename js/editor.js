@@ -154,7 +154,15 @@ export class Editor {
       const edgeHit = e.target.closest('.edge-hit');
       const callout = e.target.closest('.callout');
       if (callout) { this.app.select({ kind: 'node', id: callout.dataset.node }); return; }
-      if (port && nodeEl) return this.startConnect(e, nodeEl.dataset.id);
+      // Click-to-connect: after tapping a port, the next node tapped becomes the target.
+      if (this.pendingFrom) {
+        const from = this.pendingFrom;
+        this.cancelPending();
+        const target = nodeEl ? nodeEl.dataset.id : this.nearestNode(e.clientX, e.clientY);
+        if (target && target !== from) { e.preventDefault(); this.app.connect(from, target); return; }
+      }
+      // The port, or anywhere along the card's right edge, starts a wire.
+      if (nodeEl && (port || this.onRightEdge(nodeEl, e.clientX))) return this.startConnect(e, nodeEl.dataset.id);
       if (nodeEl) return this.startDrag(e, nodeEl.dataset.id);
       if (edgeHit) { this.app.select({ kind: 'edge', id: edgeHit.dataset.id }); return; }
       if (e.target.closest('.zoom-ctl')) return;
@@ -216,27 +224,76 @@ export class Editor {
     window.addEventListener('pointerup', up);
   }
 
+  // Right ~28px of a card (in screen pixels) acts as a connection handle.
+  onRightEdge(nodeEl, clientX) {
+    const r = nodeEl.getBoundingClientRect();
+    return clientX >= r.right - Math.max(18, 28 * this.view.k);
+  }
+
+  // Node under the pointer, or the closest one within ~90px (screen) of it.
+  nearestNode(clientX, clientY, excludeId) {
+    const over = document.elementFromPoint(clientX, clientY)?.closest('.node');
+    if (over && over.dataset.id !== excludeId) return over.dataset.id;
+    let best = null, bestD = 90;
+    for (const [id, el] of this.nodeEls) {
+      if (id === excludeId) continue;
+      const r = el.getBoundingClientRect();
+      const dx = Math.max(r.left - clientX, 0, clientX - r.right);
+      const dy = Math.max(r.top - clientY, 0, clientY - r.bottom);
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) { bestD = d; best = id; }
+    }
+    return best;
+  }
+
+  cancelPending() {
+    if (!this.pendingFrom) return;
+    this.nodeEls.get(this.pendingFrom)?.classList.remove('connect-source');
+    this.pendingFrom = null;
+    this.vp.classList.remove('connecting');
+    this.tempPath?.remove();
+    this.tempPath = null;
+    window.removeEventListener('pointermove', this.pendingMove);
+  }
+
   startConnect(e, fromId) {
     e.stopPropagation();
+    e.preventDefault();
     const path = document.createElementNS(SVGNS, 'path');
     path.setAttribute('class', 'edge-temp');
     this.tempLayer.appendChild(path);
     const from = this.anchorOut(this.graph.nodes.find(n => n.id === fromId));
+    const sx = e.clientX, sy = e.clientY;
+    let moved = false;
     this.vp.classList.add('connecting');
-    const mv = ev => {
-      const w = this.toWorld(ev.clientX, ev.clientY);
-      path.setAttribute('d', bezier(from, w));
+    const highlight = (cx, cy) => {
       document.querySelectorAll('.node.drop-target').forEach(x => x.classList.remove('drop-target'));
-      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.node');
-      if (over && over.dataset.id !== fromId) over.classList.add('drop-target');
+      const id = this.nearestNode(cx, cy, fromId);
+      if (id) this.nodeEls.get(id)?.classList.add('drop-target');
+      return id;
+    };
+    const mv = ev => {
+      if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 6) moved = true;
+      path.setAttribute('d', bezier(from, this.toWorld(ev.clientX, ev.clientY)));
+      highlight(ev.clientX, ev.clientY);
     };
     const up = ev => {
       window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
+      document.querySelectorAll('.node.drop-target').forEach(x => x.classList.remove('drop-target'));
+      if (!moved) {
+        // A plain click on the handle: wait for the user to click the target.
+        this.pendingFrom = fromId;
+        this.tempPath = path;
+        this.nodeEls.get(fromId)?.classList.add('connect-source');
+        this.pendingMove = m => { path.setAttribute('d', bezier(from, this.toWorld(m.clientX, m.clientY))); highlight(m.clientX, m.clientY); };
+        window.addEventListener('pointermove', this.pendingMove);
+        this.app.toast?.('Now click the component to connect to (Esc to cancel).');
+        return;
+      }
       path.remove();
       this.vp.classList.remove('connecting');
-      document.querySelectorAll('.node.drop-target').forEach(x => x.classList.remove('drop-target'));
-      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.node');
-      if (over && over.dataset.id !== fromId) this.app.connect(fromId, over.dataset.id);
+      const target = this.nearestNode(ev.clientX, ev.clientY, fromId);
+      if (target) this.app.connect(fromId, target);
     };
     window.addEventListener('pointermove', mv);
     window.addEventListener('pointerup', up);
@@ -268,6 +325,7 @@ export class Editor {
         this.nodeEls.set(n.id, el);
       }
       const def = CATALOG[n.type];
+      n.params = withDefaults(n.type, n.params); // imported/shared designs may be sparse
       el.style.left = n.x + 'px';
       el.style.top = n.y + 'px';
       el.style.setProperty('--accent', def.color);

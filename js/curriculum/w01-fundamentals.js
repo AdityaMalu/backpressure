@@ -75,7 +75,7 @@ Not everything is client–server. **Peer-to-peer** (BitTorrent, WebRTC calls) h
         title: 'Wire your first system',
         brief: `Your users are sending **300 requests/second**, but nothing is connected yet, so every request fails.
 
-1. Drag from the **●** on the right edge of **Users** onto the **App Server**.
+1. Drag from the right edge of **Users** (the **●** lights up when you hover) onto the **App Server**. Or click the **●**, then click the App Server.
 2. Connect **App Server → SQL Primary**.
 3. Press **▶ Run** (or Space) and watch the requests flow. Blue dots are reads, amber are writes.
 
