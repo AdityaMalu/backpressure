@@ -63,6 +63,8 @@ After changing the engine or any lab, run the calibration suite in the browser c
 
 Every lab must satisfy two checks: the **starter design fails** and the **reference solution passes**. `timeline(id)` prints a second-by-second trace of a lab run for debugging.
 
+CI runs the same suite on every push and pull request (`.github/workflows/selftest.yml`). With Node installed you can run it locally too: `node tools/selftest-node.mjs [lesson-id-filter]`.
+
 ## Accuracy
 
 Numbers are realistic approximations chosen for teaching: instance capacities, latencies and prices are in the right order of magnitude, and the dynamics (queueing, retries, failover, lag) behave like real systems. They are not benchmarks of any specific product.
