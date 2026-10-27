@@ -499,3 +499,7 @@ table.kv small { color: var(--dim); }
 .kpi[data-tip], .tile[data-tip], .metrics h3[data-tip] { cursor: help; }
 td.has-tip { text-decoration: underline dotted var(--dim); text-underline-offset: 3px; cursor: help; }
 .help:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+
+/* layoffprep bar (js/layoffprep-bar.js) takes 34px above the app */
+html.lp-on .main { height: calc(100% - var(--top) - 34px); }
+@media (max-width: 980px) { html.lp-on .sidebar, html.lp-on .panel { top: calc(var(--top) + 34px); } }
